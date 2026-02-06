@@ -1,4 +1,4 @@
-console.log("index.ts loaded");
+console.log("index.ts loaded (Exercise 2)");
 
 type Song = {
   id: number;
@@ -16,42 +16,98 @@ function getEl<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
-async function fetchByArtist(artist: string): Promise<void> {
-  const resultsDiv = getEl<HTMLDivElement>("htresults");
+function clearElement(el: HTMLElement): void {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
 
-  const trimmed = artist.trim();
-  if (trimmed === "") {
-    resultsDiv.innerHTML = "Please enter an artist.";
+function showAlertForStatus(status: number): void {
+  if (status === 400) alert("Bad request (400). Possibly out of stock or invalid request.");
+  else if (status === 404) alert("Not found (404). That song does not exist.");
+  else if (status === 500) alert("Server error (500). Check your server console.");
+  else alert(`Request failed (HTTP ${status}).`);
+}
+
+async function buySong(songId: number): Promise<void> {
+  const resp = await fetch(`/song/${songId}/buy`, { method: "POST" });
+
+  if (!resp.ok) {
+    showAlertForStatus(resp.status);
     return;
   }
 
-  resultsDiv.innerHTML = "Loading...";
+  // Your server returns JSON (201) with message + maybe song
+  const data = await resp.json().catch(() => null);
+  alert(data?.message ?? "Purchase successful!");
+
+  // Optional: refresh results after buying so quantity updates
+  const artist = getEl<HTMLInputElement>("theArtist").value;
+  await fetchByArtist(artist);
+}
+
+async function fetchByArtist(artist: string): Promise<void> {
+  const resultsDiv = getEl<HTMLDivElement>("htresults");
+  clearElement(resultsDiv);
+
+  const trimmed = artist.trim();
+  if (trimmed === "") {
+    resultsDiv.appendChild(document.createTextNode("Please enter an artist."));
+    return;
+  }
+
+  // Loading message using DOM
+  const loadingP = document.createElement("p");
+  loadingP.textContent = "Loading...";
+  resultsDiv.appendChild(loadingP);
 
   const resp = await fetch(`/artist/${encodeURIComponent(trimmed)}`);
+
   if (!resp.ok) {
-    resultsDiv.innerHTML = `Error fetching songs (HTTP ${resp.status})`;
+    clearElement(resultsDiv);
+    showAlertForStatus(resp.status);
     return;
   }
 
   const songs: Song[] = await resp.json();
 
+  clearElement(resultsDiv);
+
   if (songs.length === 0) {
-    resultsDiv.innerHTML = "No songs found.";
+    const p = document.createElement("p");
+    p.textContent = "No songs found.";
+    resultsDiv.appendChild(p);
     return;
   }
 
-  resultsDiv.innerHTML = songs
-    .map(
-      (s) => `
-      <div>
-        <strong>${s.title}</strong> (${s.year})<br>
-        Artist: ${s.artist}<br>
-        £${s.price} | Stock: ${s.quantity} | Downloads: ${s.downloads}
-        <hr>
-      </div>
-    `
-    )
-    .join("");
+  // ✅ Exercise requirement: forEach() + DOM creation
+  songs.forEach((song) => {
+    // 1) Create a paragraph and set its innerHTML to song details
+    const p = document.createElement("p");
+    p.innerHTML =
+      `<strong>${song.title}</strong> (${song.year})<br>` +
+      `Artist: ${song.artist}<br>` +
+      `£${song.price} | Stock: ${song.quantity} | Downloads: ${song.downloads}`;
+
+    resultsDiv.appendChild(p);
+
+    // 2) Create a Buy button using DOM
+    const btn = document.createElement("button");
+
+    // Use text node as requested
+    const btnText = document.createTextNode("Buy physical copy");
+    btn.appendChild(btnText);
+
+    // 3) Add event listener (arrow function, async)
+    btn.addEventListener("click", async (e) => {
+      // Call buy route with the current song id
+      await buySong(song.id);
+    });
+
+    // 4) Append the button to results div
+    resultsDiv.appendChild(btn);
+
+    // Optional: add a divider line
+    resultsDiv.appendChild(document.createElement("hr"));
+  });
 }
 
 function wireUp(): void {
@@ -59,9 +115,9 @@ function wireUp(): void {
   const btn = getEl<HTMLButtonElement>("search");
 
   btn.addEventListener("click", async () => {
-    console.log("Search clicked:", input.value);
     await fetchByArtist(input.value);
   });
 }
 
 wireUp();
+
